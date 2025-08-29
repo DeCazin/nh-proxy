@@ -1,5 +1,6 @@
+// api/img.js — Vercel Serverless Function (images + meta/info)
 export default async function handler(req, res) {
-  const { gid, p, mode = 'auto', u, debug } = req.query;
+  const { gid, p, mode = 'auto', u, debug, info, meta } = req.query;
 
   const headers = {
     "User-Agent": "Mozilla/5.0",
@@ -20,6 +21,34 @@ export default async function handler(req, res) {
     return { ok, status, ct, buf };
   }
 
+  // --- Новое: вернуть метаданные галереи (название/страницы) ---
+  if (gid && (info || meta)) {
+    try {
+      const api = `https://nhentai.net/api/gallery/${gid}`;
+      const r = await fetch(api, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (!r.ok) return res.status(r.status).json({ ok: false, status: r.status });
+      const data = await r.json();
+
+      const pages = (data.images && data.images.pages) ? data.images.pages.length : null;
+      const title =
+        (data.title && (data.title.english || data.title.pretty || data.title.japanese)) ||
+        `gallery-${gid}`;
+
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.status(200).json({
+        ok: true,
+        gid,
+        media_id: data.media_id,
+        pages,
+        title
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+
+  // -------- Ниже твоя логика картинок (без изменений) --------
   const ihosts = ["i3.nhentai.net","i7.nhentai.net","i4.nhentai.net","i6.nhentai.net","i2.nhentai.net","i.nhentai.net"];
   const thosts = ["t3.nhentai.net","t7.nhentai.net","t.nhentai.net"];
   const extsAll = ["jpg","png","gif","webp"];
@@ -27,8 +56,8 @@ export default async function handler(req, res) {
   try {
     if (gid && p) {
       const page = Math.max(1, parseInt(p) || 1);
-      const api = `https://nhentai.net/api/gallery/${gid}`;
-      const ar = await fetch(api, { headers: { "User-Agent": "Mozilla/5.0" } });
+
+      const ar = await fetch(`https://nhentai.net/api/gallery/${gid}`, { headers: { "User-Agent": "Mozilla/5.0" } });
       if (!ar.ok) return res.status(ar.status).send("api " + ar.status);
       const data = await ar.json();
       const pages = (data.images && data.images.pages) || [];
@@ -40,6 +69,7 @@ export default async function handler(req, res) {
       const media = data.media_id;
 
       const tried = [];
+
       if (mode !== "thumb") {
         for (const h of ihosts) {
           tried.push({ type:"orig", url:`https://${h}/galleries/${media}/${page}.${primaryExt}` });
